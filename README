@@ -2,7 +2,7 @@
   QBFDD
 ===============================================================================
 
-This is version 1.0 of QBFDD, a delta debugger for QBF (Quantified Boolean
+This is version 1.1 of QBFDD, a delta debugger for QBF (Quantified Boolean
 Formulas) files in QDIMACS format (see http:/www.qbflib.org/qdimacs.html for
 more details) and serves as an input minimizer for QBF Solvers failing on some 
 given input. For more information on QBF see http://www.qbflib.org.
@@ -77,6 +77,17 @@ Optional parameters to QBFDD are:
     - obo (one by one, with restarts)
     - qobo (quick obo, without restarts)
         
+  -g level, --gran=level
+  specify the minimization granularity to be used, where possible granularity
+  levels are:
+    - c : remove CLAUSES only
+          Minimizing clauses themselves (removing literals) is skipped.
+    - l : remove LITERALS only
+          Clauses themselves are minimized, but not removed (the above step is
+          skipped).
+    - b : BOTH
+          First, try to remove as many clauses as possible, then try to remove
+          as many literals as possible (minimize the clauses themselves).
 
   -s, --shift
   enable quantifier manipulations (disabled by default), in order to maybe 

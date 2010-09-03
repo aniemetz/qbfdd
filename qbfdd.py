@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.0.3"
+__version__  = "1.1.0"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -75,6 +75,10 @@ class QBFDD:
     are performed on the minimized input in order to maybe accomplish even
     further minimizations (disabled by default).
 
+    Further, it is possible to define a so called minimization granularity, 
+    that is, either of both steps - removing clauses and removing literals -
+    may be skipped.
+
     Some words about semantics of terms used here:
     A test run may FAIL or PASS on given input. We are looking for test runs
     that FAIL (as this is the original behaviour of the solver on the originally
@@ -112,6 +116,10 @@ class QBFDD:
     #ROBO = "robo"
     #QROBO = "qrobo"
 
+    BOTH = "b"
+    CONLY = "c"
+    LONLY = "l"
+
     BASH_STD = "\033[0;39m"
     BASH_GREEN = "\033[1;32m"
     BASH_RED = "\033[0;31m"
@@ -121,8 +129,8 @@ class QBFDD:
 
 
     def __init__(self, infile, cmd, outfile=None, failed=None, passed=None, 
-            mode=DDMIN, verbose=0, compliant=True, shift=False, skip=False, 
-            timeout=0, use_bash_colors=True):
+            mode=DDMIN, gran=BOTH, verbose=0, compliant=True, shift=False, 
+            skip=False, timeout=0, use_bash_colors=True):
         
         self.infile = infile
         self.cmd = cmd
@@ -165,6 +173,11 @@ class QBFDD:
             raise QBFDDError("invalid mode: {0!s}".format(mode))
         self.mode = mode
         self.repr += " -m " + mode
+
+        if gran not in [self.BOTH, self.CONLY, self.LONLY]:
+            raise QBFDDError("invalid granularity: {0!s}".format(gran))
+        self.gran = gran
+        self.repr += "-g " + gran
 
         self.verbose = verbose
         self.compliant = compliant
@@ -238,7 +251,7 @@ class QBFDD:
 
         try:
             (self.num_vars, self.ref_count, self.quantsets, self.clauses) = \
-                    parser.parse_file(self.infile)
+                parser.parse_file(self.infile)
             num_quantsets = len(self.quantsets)
             if self.compliant and \
                len(self.quantsets) == 1 and self.quantsets[-1][0] == 'a':
@@ -296,7 +309,7 @@ class QBFDD:
                 self.failed = self.exit_code
 
 
-        # minimization procedure
+        # minimization procedure (gran=BOTH)
         #  
         #  |
         #  v   rounds++   |--------------------------|  done
@@ -324,149 +337,161 @@ class QBFDD:
             # rounds: reduce number of clauses, minimize clauses
             while not done:
                 rounds += 1
-                # reduce number of clauses
-                if self.verbose:
-                    start_red = time.time()
-                    print("\n{0} clause(s), {1} variable(s), {2} literal(s) " \
-                          "in round {3}".format(num_clauses_prev, 
-                                                num_vars_prev, 
-                                                num_lits_prev, rounds))
-                    if self.verbose > 1:
-                        print("reducing number of clauses")
-                    else:
-                        print("reducing number of clauses", end='')
-                        sys.stdout.flush()
-
-                if self.mode == self.DDMIN:
-                    (successful, self.clauses) = self._ddmin(self.clauses)
-                elif self.mode == self.SDDMIN:
-                    (successful, self.clauses) = \
-                            self._ddmin(self.clauses, simple=True)
-                elif self.mode == self.IDDMIN:
-                    (successful, self.clauses) = \
-                            self._ddmin(self.clauses, inverse=True)
-                elif self.mode == self.ISDDMIN:
-                    (successful, self.clauses) = \
-                            self._ddmin(self.clauses, simple=True, inverse=True)
-                elif self.mode == self.OBO:
-                    (successful, self.clauses) = self._obo(self.clauses)
-                elif self.mode == self.QOBO:
-                    (successful, self.clauses) = \
-                            self._obo(self.clauses, quick=True)
-                else:
-                    # this may never happen (handled in __init__ already)
-                    raise QBFDDError("invalid mode: {0}".format(self.mode))
-
-                if self.verbose:
-                    if self.verbose > 1:
-                        print("reducing number of clauses", end='')
-                        sys.stdout.flush()
-
-                    if not successful:
-                        print(": {0}not successful{1}\t\t\t{2}{3:7.2f}s" \
-                              "{4}".format(self.red, self.std, self.gray, 
-                                           time.time() - start_red, self.std))
-                    else:
-                        print(": {0}successful{1}\t\t\t\t{2}{3:7.2f}s"\
-                              "{4}".format(self.green, self.std, self.gray, 
-                                           time.time() - start_red, self.std))
-
-                # last step unsuccessful in any round except the first and
-                # quantifier manipulations either disabled or unsuccessful
-                # -> no more minimization possible
-                if not successful and rounds > 1 and rounds_ == 0 :   
-                    rounds -= 1  # this round doesn't count for statistics
-                    break
-
-                # minimize clauses
-                done = True
-                if self.verbose:
-                    num_lits = 0
-                    for count in self.ref_count:
-                        num_lits += count
-                    print("-{0} clause(s), -{1} variable(s), -{2} literal(s) "\
-                          "after reduction".format(
-                              num_clauses_prev - len(self.clauses), 
-                              num_vars_prev - self.num_vars, 
-                              num_lits_prev - num_lits))
-                    num_clauses_prev = len(self.clauses)
-                    num_vars_prev = self.num_vars
-                    num_lits_prev = num_lits
-                    start_min = time.time()
-                    if self.verbose > 1:
-                        print("\nminimizing clauses")
-                    else:
-                        print("minimizing clauses", end='')
-                        sys.stdout.flush()
-
-                for i in range(0,len(self.clauses)):
-                    clause = self.clauses[i][:]
-
-                    if self.verbose > 1:
-                        print("\nclause: ", end='')
-                        sys.stdout.flush()
-                        print(*clause)
+                if self.gran != self.LONLY:
+                    # reduce number of clauses
+                    if self.verbose:
+                        start_red = time.time()
+                        print("\n{0} clause(s), {1} variable(s), {2} literal" \
+                              "(s) in round {3}".format(num_clauses_prev, 
+                                                        num_vars_prev, 
+                                                        num_lits_prev, rounds))
+                        if self.verbose > 1:
+                            print("reducing number of clauses")
+                        else:
+                            print("reducing number of clauses", end='')
+                            sys.stdout.flush()
 
                     if self.mode == self.DDMIN:
-                        (successful, self.clauses[i]) = self._ddmin(clause, i)
+                        (successful, self.clauses) = self._ddmin(self.clauses)
                     elif self.mode == self.SDDMIN:
-                        (successful, self.clauses[i]) = \
-                                self._ddmin(clause, i, simple=True)
+                        (successful, self.clauses) = \
+                            self._ddmin(self.clauses, simple=True)
                     elif self.mode == self.IDDMIN:
-                        (successful, self.clauses[i]) = \
-                                self._ddmin(clause, i, inverse=True)
+                        (successful, self.clauses) = \
+                            self._ddmin(self.clauses, inverse=True)
                     elif self.mode == self.ISDDMIN:
-                        (successful, self.clauses[i]) = \
-                                self._ddmin(clause, i, simple=True, 
-                                            inverse=True)
+                        (successful, self.clauses) = \
+                            self._ddmin(self.clauses, simple=True, inverse=True)
                     elif self.mode == self.OBO:
-                        (successful, self.clauses[i]) = self._obo(clause, i)
+                        (successful, self.clauses) = self._obo(self.clauses)
                     elif self.mode == self.QOBO:
-                        (successful, self.clauses[i]) = \
-                                self._obo(clause, i, quick=True)
+                        (successful, self.clauses) = \
+                            self._obo(self.clauses, quick=True)
                     else:
                         # this may never happen (handled in __init__ already)
                         raise QBFDDError("invalid mode: {0}".format(self.mode))
-                    
-                    # if any of the minimization steps was successful: continue
-                    # if all of them were not successful: done
-                    if successful:
-                        done = False
-           
-                if self.verbose:
-                    if self.verbose > 1:
-                        print("minimizing clauses", end='')
-                        sys.stdout.flush()
-                    if done:
-                        print(": {0}not successful{1}\t\t\t\t{2}{3:7.2f}s" \
-                              "{4}".format(self.red, self.std, self.gray, 
-                                           time.time() - start_min, self.std))
-                    else:
-                        print(": {0}successful{1}\t\t\t\t\t{2}{3:7.2f}s" \
-                              "{4}".format(self.green, self.std, self.gray, 
-                                           time.time() - start_min, self.std))
-                    num_lits = 0
-                    for count in self.ref_count:
-                        num_lits += count
-                    assert(num_clauses_prev == len(self.clauses))
-                    print("-{0} variable(s), -{1} literal(s) after "
-                          "minimization step".format(
-                              num_vars_prev - self.num_vars, 
-                              num_lits_prev - num_lits))
-                    if self.n_timeouts > 0:
-                        print("{0}warning!{1} {2} test runs aborted "\
-                              "(timeout)".format(self.blue, self.std, 
-                                                 self.n_timeouts))
-                        self.n_timeouts = 0  # reset
-                    print("{0}-{1} clause(s), -{2} variable(s), -{3} " \
-                          "literal(s) after round {4}{5}".format(
-                              self.yellow, num_clauses_orig - len(self.clauses),
-                              num_vars_orig - self.num_vars, 
-                              num_lits_orig - num_lits, rounds, self.std))
-                    num_clauses_prev = len(self.clauses)      
-                    num_vars_prev = self.num_vars
-                    num_lits_prev = num_lits
-                # end for
+
+                    if self.verbose:
+                        if self.verbose > 1:
+                            print("reducing number of clauses", end='')
+                            sys.stdout.flush()
+
+                        if not successful:
+                            print(": {0}not successful{1}\t\t\t{2}{3:7.2f}s" \
+                                  "{4}".format(self.red, self.std, self.gray, 
+                                               time.time() - start_red, 
+                                               self.std))
+                        else:
+                            print(": {0}successful{1}\t\t\t\t{2}{3:7.2f}s"\
+                                  "{4}".format(self.green, self.std, self.gray, 
+                                               time.time() - start_red, 
+                                               self.std))
+
+                    # last step unsuccessful in any round except the first and
+                    # quantifier manipulations either disabled or unsuccessful
+                    # -> no more minimization possible
+                    if (not successful and rounds > 1 and rounds_ == 0) or \
+                       (not successful and self.gran == self.CONLY):
+                        rounds -= 1  # this round doesn't count for statistics
+                        break
+
+
+                if self.gran != self.CONLY:
+                    # minimize clauses
+                    done = True
+                    if self.verbose:
+                        num_lits = 0
+                        for count in self.ref_count:
+                            num_lits += count
+                        print("-{0} clause(s), -{1} variable(s), -{2} literal"\
+                              "(s) after reduction".format(
+                                  num_clauses_prev - len(self.clauses), 
+                                  num_vars_prev - self.num_vars, 
+                                  num_lits_prev - num_lits))
+                        num_clauses_prev = len(self.clauses)
+                        num_vars_prev = self.num_vars
+                        num_lits_prev = num_lits
+                        start_min = time.time()
+                        if self.verbose > 1:
+                            print("\nminimizing clauses")
+                        else:
+                            print("minimizing clauses", end='')
+                            sys.stdout.flush()
+
+                    for i in range(0,len(self.clauses)):
+                        clause = self.clauses[i][:]
+
+                        if self.verbose > 1:
+                            print("\nclause: ", end='')
+                            sys.stdout.flush()
+                            print(*clause)
+
+                        if self.mode == self.DDMIN:
+                            (successful, self.clauses[i]) = \
+                                self._ddmin(clause, i)
+                        elif self.mode == self.SDDMIN:
+                            (successful, self.clauses[i]) = \
+                                self._ddmin(clause, i, simple=True)
+                        elif self.mode == self.IDDMIN:
+                            (successful, self.clauses[i]) = \
+                                self._ddmin(clause, i, inverse=True)
+                        elif self.mode == self.ISDDMIN:
+                            (successful, self.clauses[i]) = \
+                                self._ddmin(clause, i, simple=True, 
+                                            inverse=True)
+                        elif self.mode == self.OBO:
+                            (successful, self.clauses[i]) = self._obo(clause, i)
+                        elif self.mode == self.QOBO:
+                            (successful, self.clauses[i]) = \
+                                self._obo(clause, i, quick=True)
+                        else:
+                            # this may never happen 
+                            # (handled in __init__ already)
+                            raise QBFDDError(
+                                    "invalid mode: {0}".format(self.mode))
+                        
+                        # any of the minimization steps was successful: continue
+                        # all of them were not successful: done
+                        if successful:
+                            done = False
+               
+                    if self.verbose:
+                        if self.verbose > 1:
+                            print("minimizing clauses", end='')
+                            sys.stdout.flush()
+                        if done:
+                            print(": {0}not successful{1}\t\t\t\t{2}{3:7.2f}s" \
+                                  "{4}".format(self.red, self.std, self.gray, 
+                                               time.time() - start_min, 
+                                               self.std))
+                        else:
+                            print(": {0}successful{1}\t\t\t\t\t{2}{3:7.2f}s" \
+                                  "{4}".format(self.green, self.std, self.gray, 
+                                               time.time() - start_min, 
+                                               self.std))
+                        num_lits = 0
+                        for count in self.ref_count:
+                            num_lits += count
+                        assert(num_clauses_prev == len(self.clauses))
+                        print("-{0} variable(s), -{1} literal(s) after "
+                              "minimization step".format(
+                                  num_vars_prev - self.num_vars, 
+                                  num_lits_prev - num_lits))
+                        if self.n_timeouts > 0:
+                            print("{0}warning!{1} {2} test runs aborted "\
+                                  "(timeout)".format(self.blue, self.std, 
+                                                     self.n_timeouts))
+                            self.n_timeouts = 0  # reset
+                        print("{0}-{1} clause(s), -{2} variable(s), -{3} " \
+                              "literal(s) after round {4}{5}".format(
+                                  self.yellow, 
+                                  num_clauses_orig - len(self.clauses),
+                                  num_vars_orig - self.num_vars, 
+                                  num_lits_orig - num_lits, rounds, self.std))
+                        num_clauses_prev = len(self.clauses)      
+                        num_vars_prev = self.num_vars
+                        num_lits_prev = num_lits
+                    # end for
             # end while
             if not self.shift: 
                 break
@@ -647,11 +672,10 @@ class QBFDD:
                 for i in range(len(subsets)):
                     if single:
                         (count, quants, clause_s) = \
-                                self._minimize(superset, subsets, i, 
-                                                to_complement)
+                            self._minimize(superset, subsets, i, to_complement)
                     else:    
                         (count, quants, clause_s) = \
-                                self._reduce(subsets, i, to_complement)
+                            self._reduce(subsets, i, to_complement)
 
                     index_list = self._get_indices(clause_s, superset_orig)
 
@@ -680,7 +704,7 @@ class QBFDD:
                             sys.stdout.flush()
 
                         (count_upd, quants_upd, clause_s_upd) = \
-                                self._update(count, quants, clause_s)
+                            self._update(count, quants, clause_s)
                         if self.verbose > 1:
                             print("\t\t\t{0}{1:7.2f}ms{2}".format(
                                   self.gray, (time.time() - start_upd) * 1000, 
@@ -728,7 +752,7 @@ class QBFDD:
                             self.quantsets = quants[:]
                             self.ref_count = count[:]
                             self.num_vars = \
-                                   len(self.ref_count) - self.ref_count.count(0)
+                                len(self.ref_count) - self.ref_count.count(0)
                             
                             if inverse:
                                 n = len(superset)
@@ -858,7 +882,7 @@ class QBFDD:
                         sys.stdout.flush()
 
                     (count_upd, quants_upd, clause_s_upd) = \
-                            self._update(count, quants, clause_s)
+                        self._update(count, quants, clause_s)
                     
                     if self.verbose > 1:
                         print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -909,7 +933,7 @@ class QBFDD:
                         self.quantsets = quants[:]
                         self.ref_count = count[:]
                         self.num_vars = \
-                                len(self.ref_count) - self.ref_count.count(0) 
+                            len(self.ref_count) - self.ref_count.count(0) 
                         successful = True
                         has_failed = True
                         if self.verbose > 1:
@@ -1299,7 +1323,7 @@ class QBFDD:
         # eliminate variables bound by innermost scope if universal
         if quantsets[-1][0] == 'a':
             (ref_count, quantsets, clauses) = \
-                    self._forall(ref_count, quantsets, clauses)
+                self._forall(ref_count, quantsets, clauses)
 
         if ref_count.count(0) > 1:
             # update ref count and create mapping table:
@@ -1865,6 +1889,9 @@ class QBFOptionParser(OptionParser):
                 "depending on the minimization strategies used.\n" \
                 "Currently available: \tddmin [1], ddmin [2], " \
                 "iddmin [3], isddmin [4],\n\t\t\tobo [5], qobo [6]\n\n" \
+                "Note, that it is possible to define three levels of " \
+                "granularity for each minimization strategy: c (clauses " \
+                "only), l (literals only), b (both)\n\n"
                 "[1] A. Zeller, R. Hildebrandt: Simplifying " \
                 "failure-inducing input, ISSTA 2000\n" \
                 "[2] A. Zeller: Why programs fail, ISBN 3-89864-279-8, dpunkt" \
@@ -1888,6 +1915,10 @@ class QBFOptionParser(OptionParser):
         self.add_option("-m", "--mode", dest="mode", metavar="str", 
                         default="ddmin",
                         help="minimization strategy used (default: %default)")
+        self.add_option("-g", "--gran", dest="gran", metavar="char", 
+                        default='b', 
+                        help="minimization granularity used "\
+                             "(default: %default)")
         self.add_option("-s", "--shift", action="store_true", 
                         dest="shift", default=False,
                         help="enable quantifier manipulations (shifts from " \
@@ -1953,9 +1984,9 @@ if __name__ == "__main__":
 
     try:
         qbf_dd = QBFDD(args[0], args[1], options.outfile, options.failed, 
-                       options.passed, options.mode, options.verbose, 
-                       options.compliant, options.shift, options.skip, 
-                       options.timeout, options.use_bash_colors)
+                       options.passed, options.mode, options.gran,
+                       options.verbose, options.compliant, options.shift, 
+                       options.skip, options.timeout, options.use_bash_colors)
         qbf_dd.dd()
         sys.exit()
     except (QBFDDError, KeyboardInterrupt) as err:
