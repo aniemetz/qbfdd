@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.1.0"
+__version__  = "1.1.1"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -1321,7 +1321,7 @@ class QBFDD:
         assert(not (len(quantsets) == 1 and quantsets[-1][0] == 'a'))
 
         # eliminate variables bound by innermost scope if universal
-        if quantsets[-1][0] == 'a':
+        if len(quantsets) != 0 and quantsets[-1][0] == 'a':
             (ref_count, quantsets, clauses) = \
                 self._forall(ref_count, quantsets, clauses)
 
