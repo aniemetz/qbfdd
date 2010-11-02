@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.1.1"
+__version__  = "1.1.2"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -129,8 +129,8 @@ class QBFDD:
 
 
     def __init__(self, infile, cmd, outfile=None, failed=None, passed=None, 
-            mode=DDMIN, gran=BOTH, verbose=0, compliant=True, shift=False, 
-            skip=False, timeout=0, use_bash_colors=True):
+                 mode=DDMIN, gran=BOTH, verbose=0, compliant=True, shift=False, 
+                 skip=False, timeout=0, use_bash_colors=True):
         
         self.infile = infile
         self.cmd = cmd
@@ -177,7 +177,7 @@ class QBFDD:
         if gran not in [self.BOTH, self.CONLY, self.LONLY]:
             raise QBFDDError("invalid granularity: {0!s}".format(gran))
         self.gran = gran
-        self.repr += "-g " + gran
+        self.repr += " -g " + gran
 
         self.verbose = verbose
         self.compliant = compliant
@@ -751,9 +751,9 @@ class QBFDD:
                                 superset = clause_s[index][:]
                             self.quantsets = quants[:]
                             self.ref_count = count[:]
-                            self.num_vars = \
-                                len(self.ref_count) - self.ref_count.count(0)
-                            
+                            if self.compliant:
+                                self.num_vars = len(self.ref_count) - \
+                                                self.ref_count.count(0)
                             if inverse:
                                 n = len(superset)
                             else:
@@ -932,8 +932,9 @@ class QBFDD:
                             superset = clause_s[index][:]
                         self.quantsets = quants[:]
                         self.ref_count = count[:]
-                        self.num_vars = \
-                            len(self.ref_count) - self.ref_count.count(0) 
+                        if self.compliant:
+                            self.num_vars = \
+                                len(self.ref_count) - self.ref_count.count(0) 
                         successful = True
                         has_failed = True
                         if self.verbose > 1:
@@ -1338,10 +1339,10 @@ class QBFDD:
                 updated_quantset = [quantset[0], []]
                 for lit in quantset[1]:
                     assert(lit > 0)
-                    assert(ref_count[lit] != 0)
-                    updated_quantset[1].append(mapping.index(lit))
-                assert(len(updated_quantset[1]) >= 1)
-                quantsets_upd.append(updated_quantset)
+                    if (ref_count[lit] != 0):
+                        updated_quantset[1].append(mapping.index(lit))
+                if (len (updated_quantset[1]) > 0):
+                    quantsets_upd.append(updated_quantset)
 
             # update clauses
             for clause in clauses:
@@ -1530,7 +1531,9 @@ class QBFDD:
             self.quants_cache.add(quants_list, test_result)
 
             if test_result == self.FAILED:
-                self.num_vars = len(self.ref_count) - self.ref_count.count(0)
+                if self.compliant:
+                    self.num_vars = len(self.ref_count) - \
+                                    self.ref_count.count(0)
                 self.quantsets = quants[:]
                 successful = True
                 if self.verbose > 1:
