@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 #
 # QBFDD is a delta debugger for QBF (Quantified Boolean Formulas) solvers.
-# Copyright (c) 2009, Aina Niemetz
+# Copyright (c) 2009, 2010, 2011, Aina Niemetz
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.1.2"
+__version__  = "1.2.0"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -128,14 +128,17 @@ class QBFDD:
     BASH_GRAY = "\033[1;30m"
 
 
-    def __init__(self, infile, cmd, outfile=None, failed=None, passed=None, 
-                 mode=DDMIN, gran=BOTH, verbose=0, compliant=True, shift=False, 
-                 skip=False, timeout=0, use_bash_colors=True):
+    def __init__(self, infile, cmd, outfile=None, tmpfile=None, 
+                 failed=None, passed=None, mode=DDMIN, gran=BOTH, 
+                 verbose=0, compliant=True, shift=False, skip=False, 
+                 timeout=0, use_bash_colors=True):
         
         self.infile = infile
-        self.cmd = cmd
-        self.repr = "qbfdd.py " + os.path.realpath(self.infile) + " " + \
-                    os.path.realpath(self.cmd)
+
+        if tmpfile == None:
+            self.tmpfile = "/tmp/tmp-" + str(os.getpid()) + ".qdimacs"
+        else:
+            self.tmpfile = tmpfile
 
         if outfile == None:  # use infile"_reduced".ext
             ext = ''
@@ -152,6 +155,10 @@ class QBFDD:
             self.outfile += ext
         else:
             self.outfile = outfile
+
+        self.cmd = cmd
+        self.repr = "qbfdd.py " + os.path.realpath(self.infile) + " " + \
+                    os.path.realpath(self.cmd)
 
         self.failed = None
         if failed != None:
@@ -212,7 +219,7 @@ class QBFDD:
             self.blue = self.BASH_BLUE
             self.gray = self.BASH_GRAY
             self.std = self.BASH_STD
-        else:  # do not clutter i.e. redirected output
+        else:  # do not clutter e.g. redirected output
             self.green = self.red = self.yellow = self.gray = self.std = ''
             opts += "c"
 
@@ -283,7 +290,8 @@ class QBFDD:
             print("writing original configuration to output file...", end='')
             sys.stdout.flush()
 
-        self._write_file(self.num_vars, self.quantsets, self.clauses)
+        self._write_file(self.tmpfile, 
+                         self.num_vars, self.quantsets, self.clauses)
         
         if self.verbose > 1:
             print("\t\t{0}{1:7.2f}ms{2}".format(
@@ -578,8 +586,15 @@ class QBFDD:
             print("writing new configuration to output file...", end='')
             sys.stdout.flush()
 
-        self._write_file(self.num_vars, self.quantsets, self.clauses, 
-                         comments)
+        self._write_file(self.outfile, 
+                         self.num_vars, self.quantsets, self.clauses, comments)
+
+        try:
+            os.remove(self.tmpfile)
+        except (OSError, ValueError) as err:
+            if self.verbose > 1:
+                print()
+            raise QBFDDError(err.strerror + ": " + command[0])
 
         if self.verbose > 1:
             print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -725,8 +740,8 @@ class QBFDD:
                                   end='')
                             sys.stdout.flush()
 
-                        self._write_file(len(count_upd) - 1, quants_upd, 
-                                      clause_s_upd)
+                        self._write_file(self.tmpfile, len(count_upd) - 1, 
+                                         quants_upd, clause_s_upd)
                     
                         if self.verbose > 1:
                             print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -749,6 +764,7 @@ class QBFDD:
                             superset = clause_s[:]
                             if single:             
                                 superset = clause_s[index][:]
+                            # keep the original (not updated) sets
                             self.quantsets = quants[:]
                             self.ref_count = count[:]
                             if self.compliant:
@@ -764,6 +780,10 @@ class QBFDD:
 
                             has_failed = True
                             successful = True
+                            # save successful config 
+                            self._write_file(self.outfile, len(count_upd) - 1, 
+                                             quants_upd, clause_s_upd)
+
                             if self.verbose > 1:
                                 print("\t{0}successful{1}\t\t{2}{3:7.2f}ms" \
                                       "{4}".format(
@@ -904,8 +924,8 @@ class QBFDD:
                               end='')
                         sys.stdout.flush()
 
-                    self._write_file(len(count_upd) - 1, quants_upd, 
-                                     clause_s_upd)
+                    self._write_file(self.tmpfile, len(count_upd) - 1, 
+                                     quants_upd, clause_s_upd)
                     
                     if self.verbose > 1:
                         print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -935,8 +955,12 @@ class QBFDD:
                         if self.compliant:
                             self.num_vars = \
                                 len(self.ref_count) - self.ref_count.count(0) 
-                        successful = True
                         has_failed = True
+                        successful = True
+                        # save successful config 
+                        self._write_file(self.outfile, len(count_upd) - 1, 
+                                         quants_upd, clause_s_upd)
+
                         if self.verbose > 1:
                             print("\t{0}successful{1}\t\t\t\t{2}{3:7.2f}ms" \
                                   "{4}".format(
@@ -969,7 +993,7 @@ class QBFDD:
         """
         pattern = re.compile("\s+")
         command = pattern.split(self.cmd.strip())
-        command.append(self.outfile)
+        command.append(self.tmpfile)
         start = time.time()
         
         try:
@@ -1004,13 +1028,13 @@ class QBFDD:
                UNRESOLVED if we can't tell;
         raises QBFDDError.
 
-        Note: Minimized input has to be written to self.output up front.
+        Note: Minimized input has to be written to self.tmpfile up front.
         """
         self.test_runs += 1
 
         pattern = re.compile("\s+")
         command = pattern.split(self.cmd.strip())
-        command.append(self.outfile)
+        command.append(self.tmpfile)
         start = time.time()
 
         try:
@@ -1074,18 +1098,20 @@ class QBFDD:
         return self.UNRESOLVED
 
 
-    def _write_file(self, n_vars, quantsets, clauses, comments=None):
+    def _write_file(self, filename, n_vars, quantsets, clauses, comments=None):
         """
-        _write_file(n_vars      : int,
+        _write_file(filename    : string,
+                    n_vars      : int,
                     quantsets   : [[(e|a), [int, ...]], ...], 
                     clauses     : [[int, ...], ...],
                     comments    : [string, ...])
 
-        Write given configuration to output file;
+        Write given configuration to given file;
         raises QBFDDError.
         """
         try:
-            with open(self.outfile, 'w') as outfile:
+#            with open(self.outfile, 'w') as outfile:
+            with open(filename, 'w') as outfile:
                 if comments:
                     for comment in comments:
                         outfile.write("c " + str(comment) + "\n")
@@ -1513,8 +1539,8 @@ class QBFDD:
                 print("writing new configuration to output file...", end='')
                 sys.stdout.flush()
            
-            self._write_file(len(ref_count_upd) - 1, quantsets_upd, 
-                              clauses_upd)
+            self._write_file(self.tmpfile, 
+                             len(ref_count_upd) - 1, quantsets_upd, clauses_upd)
             
             if self.verbose > 1:
                 print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -1536,6 +1562,11 @@ class QBFDD:
                                     self.ref_count.count(0)
                 self.quantsets = quants[:]
                 successful = True
+                
+                # save successful config
+                self._write_file(self.outfile, len(ref_count_upd) - 1, 
+                                 quantsets_upd, clauses_upd)
+
                 if self.verbose > 1:
                     print("\t{0}successful{1}\t\t\t\t{2}{3:7.2f}ms" \
                           "{4}".format(self.green, self.std, self.gray, 
@@ -1548,8 +1579,9 @@ class QBFDD:
                                    (time.time() - start_test) * 1000, 
                                    self.std))
         # end for
+
         if not successful:
-        # quantifier shifts
+            # quantifier shifts
             for i in range(len(self.quantsets)):
                 if len(self.quantsets[i][1]) <= 1:  # already tested (swaps)
                     continue
@@ -1590,7 +1622,8 @@ class QBFDD:
                                   end='')
                             sys.stdout.flush()
                        
-                        self._write_file(self.ref_count, quants, self.clauses)
+                        self._write_file(self.tmpfile,
+                                         self.ref_count, quants, self.clauses)
                         
                         if self.verbose > 1:
                             print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -1612,6 +1645,10 @@ class QBFDD:
                         if test_result == self.FAILED:
                             self.quantsets = quants[:]
                             successful = True
+                            # save successful config 
+                            self._write_file(self.outfile, self.ref_count, 
+                                             quants, self.clauses)
+
                             if self.verbose > 1:
                                 print("\t{0}successful{1}\t\t\t\t{2}" \
                                       "{3:7.2f}ms{4}".format(
@@ -1890,7 +1927,7 @@ class QBFOptionParser(OptionParser):
                 "the minimized input.\n\n" \
                 "QBFDD provides several different minimization modes, " \
                 "depending on the minimization strategies used.\n" \
-                "Currently available: \tddmin [1], ddmin [2], " \
+                "Currently available: \tddmin [1], sddmin [2], " \
                 "iddmin [3], isddmin [4],\n\t\t\tobo [5], qobo [6]\n\n" \
                 "Note, that it is possible to define three levels of " \
                 "granularity for each minimization strategy: c (clauses " \
@@ -1915,6 +1952,10 @@ class QBFOptionParser(OptionParser):
                         dest="outfile", metavar="file",
                         help="individual file name for minimized QBF")
         self.set_defaults(outfile=None)
+        self.add_option("-O", "--tmp",
+                        dest="tmpfile", metavar="file",
+                        help="individual file name for temp work file")
+        self.set_defaults(tmpfile=None)
         self.add_option("-m", "--mode", dest="mode", metavar="str", 
                         default="ddmin",
                         help="minimization strategy used (default: %default)")
@@ -1986,10 +2027,11 @@ if __name__ == "__main__":
         opt_parser.error("invalid number of arguments")
 
     try:
-        qbf_dd = QBFDD(args[0], args[1], options.outfile, options.failed, 
-                       options.passed, options.mode, options.gran,
-                       options.verbose, options.compliant, options.shift, 
-                       options.skip, options.timeout, options.use_bash_colors)
+        qbf_dd = QBFDD(args[0], args[1], options.outfile, options.tmpfile,
+                       options.failed, options.passed, options.mode, 
+                       options.gran, options.verbose, options.compliant, 
+                       options.shift, options.skip, options.timeout, 
+                       options.use_bash_colors)
         qbf_dd.dd()
         sys.exit()
     except (QBFDDError, KeyboardInterrupt) as err:
