@@ -2037,4 +2037,5 @@ if __name__ == "__main__":
     except (QBFDDError, KeyboardInterrupt) as err:
         if os.path.exists(qbf_dd.outfile):
             os.remove(qbf_dd.outfile)
+            os.remove(qbf_dd.tmpfile)
         sys.exit(err)
