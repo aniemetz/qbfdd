@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.2.0"
+__version__  = "1.2.1"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -2036,6 +2036,5 @@ if __name__ == "__main__":
         sys.exit()
     except (QBFDDError, KeyboardInterrupt) as err:
         if os.path.exists(qbf_dd.outfile):
-            os.remove(qbf_dd.outfile)
             os.remove(qbf_dd.tmpfile)
         sys.exit(err)
