@@ -28,7 +28,7 @@ import textwrap
 from subprocess import Popen, PIPE
 from optparse import OptionParser, IndentedHelpFormatter
 
-__version__  = "1.2.1"
+__version__  = "1.2.2"
 __author__ = "Aina Niemetz <aina.niemetz at gmail.com>"
 
 
@@ -1110,7 +1110,6 @@ class QBFDD:
         raises QBFDDError.
         """
         try:
-#            with open(self.outfile, 'w') as outfile:
             with open(filename, 'w') as outfile:
                 if comments:
                     for comment in comments:
@@ -1622,8 +1621,10 @@ class QBFDD:
                                   end='')
                             sys.stdout.flush()
                        
-                        self._write_file(self.tmpfile,
-                                         self.ref_count, quants, self.clauses)
+                        self._write_file(self.tmpfile, 
+                                         len(self.ref_count) - 1,
+                                         quants, 
+                                         self.clauses)
                         
                         if self.verbose > 1:
                             print("\t\t\t{0}{1:7.2f}ms{2}".format(
@@ -1646,8 +1647,10 @@ class QBFDD:
                             self.quantsets = quants[:]
                             successful = True
                             # save successful config 
-                            self._write_file(self.outfile, self.ref_count, 
-                                             quants, self.clauses)
+                            self._write_file(self.outfile, 
+                                             len (self.ref_count) - 1,
+                                             quants, 
+                                             self.clauses)
 
                             if self.verbose > 1:
                                 print("\t{0}successful{1}\t\t\t\t{2}" \

@@ -73,7 +73,7 @@ Optional parameters to QBFDD are:
             is used by default: tmp-<PID>.qdimacs
 
   -m mode, --mode=mode
-            Specify the minimization strategy to be used, by default, 
+            Specify the minimization strategy to be used - by default, 
             A. Zeller's 'ddmin' is used (see A. Zeller, R. Hildebrandt: 
             Simplifying failure-inducing input,ISSTA 200).
             Other modes currently supported:
