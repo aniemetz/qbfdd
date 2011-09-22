@@ -100,33 +100,33 @@ Optional parameters to QBFDD are:
                     clauses themselves).
 
   -s, --shift
-              Enable quantifier manipulations (disabled by default), in order 
-              to maybe accomplish even further minimizations.
+            Enable quantifier manipulations (disabled by default), in order 
+            to maybe accomplish even further minimizations.
 
 
   -S, --skip-output
-              Do not consider output of the given executable via stdout and 
-              stderr for determing results of test runs (results are then based
-              on the respective return codes only, disabled by default).
+            Do not consider output of the given executable via stdout and 
+            stderr for determing results of test runs (results are then based
+            on the respective return codes only, disabled by default).
 
 
   -t value, --timeout=value
-              Specifiy a time out for test runs, disabled by default.
+            Specifiy a time out for test runs, disabled by default.
 
 
   -q, --no-qdimacs
-              Do not care about QDIMACS standard compliance (both for 
-              minimization and output file format, disabled by default).
+            Do not care about QDIMACS standard compliance (both for 
+            minimization and output file format, disabled by default).
   
 
   -c, --no-color
-              Disable colored output for verbose messages.
+            Disable colored output for verbose messages.
 
 
   -v, --verbose
-              Be verbose, verbosity is organised in levels (currently two):
-              -v            be verbose
-              -v -v or -vv  be very verbose
+            Be verbose, verbosity is organised in levels (currently two):
+            -v            be verbose
+            -v -v or -vv  be very verbose
 
 
 
