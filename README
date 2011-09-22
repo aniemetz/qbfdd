@@ -75,7 +75,7 @@ Optional parameters to QBFDD are:
   -m mode, --mode=mode
             Specify the minimization strategy to be used - by default, 
             A. Zeller's 'ddmin' is used (see A. Zeller, R. Hildebrandt: 
-            Simplifying failure-inducing input,ISSTA 200).
+            Simplifying failure-inducing input, ISSTA 2000).
             Other modes currently supported:
               - sddmin (simple ddmin, see the ddmin algorithm in A. Zeller: 
                         Why programs fail, ISBN 3-89864-279-8, dpunkt Verlag, 
